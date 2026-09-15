@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rocket Lander — LaunchTower</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #141926;
+    --panel2: #1b2233;
+    --line: #2a3350;
+    --text: #dfe6f5;
+    --dim: #8b96b3;
+    --accent: #5eead4;
+    --accent2: #facc15;
+    --danger: #f87171;
+    --ok: #4ade80;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "SF Mono", "Cascadia Code", Consolas, Menlo, monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  header {
+    width: 100%;
+    max-width: 960px;
+    padding: 14px 16px 8px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  header h1 {
+    font-size: 18px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  header h1 span { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  #hud {
+    display: flex;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--dim);
+    flex-wrap: wrap;
+  }
+  #hud b { color: var(--text); font-weight: 600; }
+  #hud .fuel b { color: var(--accent2); }
+  #hud .score b { color: var(--accent); }
+  #stage {
+    position: relative;
+    width: 100%;
+    max-width: 960px;
+    padding: 0 10px;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #070a10;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    touch-action: none;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  #card {
+    background: rgba(13, 17, 28, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 26px 30px;
+    text-align: center;
+    max-width: 420px;
+    width: calc(100% - 60px);
+    pointer-events: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  }
+  #card h2 {
+    font-size: 20px;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+  #card h2.win { color: var(--ok); }
+  #card h2.lose { color: var(--danger); }
+  #card p { font-size: 13px; color: var(--dim); line-height: 1.6; margin-bottom: 8px; }
+  #card .stat { font-size: 14px; margin: 10px 0; color: var(--text); }
+  #card .stat b { color: var(--accent); }
+  .btn {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 10px 22px;
+    background: var(--accent);
+    color: #06251f;
+    border: none;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.ghost {
+    background: transparent;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    margin-left: 8px;
+  }
+  #controls {
+    width: 100%;
+    max-width: 960px;
+    padding: 10px 16px 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  #keys { font-size: 11px; color: var(--dim); line-height: 1.7; }
+  #keys kbd {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    color: var(--text);
+  }
+  #touch { display: none; gap: 10px; }
+  .tbtn {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--panel2);
+    color: var(--text);
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tbtn.thrust { background: rgba(250, 204, 21, 0.15); border-color: rgba(250, 204, 21, 0.4); }
+  @media (pointer: coarse) {
+    #touch { display: flex; }
+    #keys { display: none; }
+  }
+  footer {
+    width: 100%;
+    max-width: 960px;
+    padding: 12px 16px 18px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--dim);
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ROCKET LANDER <span>by LaunchTower</span></h1>
+  <div id="hud">
+    <span class="lvl">LVL <b id="hLvl">1</b></span>
+    <span class="fuel">FUEL <b id="hFuel">100</b></span>
+    <span class="vel">VEL <b id="hVel">0.0</b></span>
+    <span class="score">SCORE <b id="hScore">0</b></span>
+    <span class="best">BEST <b id="hBest">0</b></span>
+  </div>
+</header>
+
+<div id="stage">
+  <canvas id="cv" width="960" height="540"></canvas>
+  <div id="overlay">
+    <div id="card">
+      <h2 id="cTitle">ROCKET LANDER</h2>
+      <p id="cMsg">Guide the lander onto a flat pad.<br>Soft landing: low speed, near-vertical, gentle rotation.<br>Each level: less fuel, trickier terrain, more pads to avoid cliffs.</p>
+      <div class="stat" id="cStat"></div>
+      <button class="btn" id="cBtn">LAUNCH</button>
+    </div>
+  </div>
+</div>
+
+<div id="controls">
+  <div id="keys">
+    <kbd>←</kbd> <kbd>→</kbd> rotate &nbsp; <kbd>↑</kbd> / <kbd>Space</kbd> thrust &nbsp; <kbd>R</kbd> retry level
+  </div>
+  <div id="touch">
+    <div class="tbtn" id="tLeft">⟲</div>
+    <div class="tbtn" id="tRight">⟳</div>
+    <div class="tbtn thrust" id="tThrust">▲</div>
+  </div>
+</div>
+
+<footer>
+  LaunchTower — free tools &amp; games for pixel artists and game devs ·
+  <a href="https://pennypenguinapp-beep.github.io/" target="_blank" rel="noopener">more on the hub →</a>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var cv = document.getElementById("cv");
+  var ctx = cv.getContext("2d");
+  var W = cv.width, H = cv.height;
+
+  // ---------- HUD ----------
+  var hLvl = document.getElementById("hLvl");
+  var hFuel = document.getElementById("hFuel");
+  var hVel = document.getElementById("hVel");
+  var hScore = document.getElementById("hScore");
+  var hBest = document.getElementById("hBest");
+  var overlay = document.getElementById("overlay");
+  var card = document.getElementById("card");
+  var cTitle = document.getElementById("cTitle");
+  var cMsg = document.getElementById("cMsg");
+  var cStat = document.getElementById("cStat");
+  var cBtn = document.getElementById("cBtn");
+
+  // ---------- Level config ----------
+  var LEVELS = [
+    { fuel: 100, gravity: 14,  padCount: 4, roughness: 10,  maxSlope: 0.35, maxVel: 2.2, maxRot: 0.06 },
+    { fuel: 85,  gravity: 16,  padCount: 4, roughness: 14,  maxSlope: 0.45, maxVel: 2.0, maxRot: 0.05 },
+    { fuel: 75,  gravity: 18,  padCount: 3, roughness: 18,  maxSlope: 0.55, maxVel: 1.8, maxRot: 0.045 },
+    { fuel: 65,  gravity: 20,  padCount: 3, roughness: 22,  maxSlope: 0.65, maxVel: 1.6, maxRot: 0.04 },
+    { fuel: 55,  gravity: 22,  padCount: 2, roughness: 26,  maxSlope: 0.75, maxVel: 1.4, maxRot: 0.035 }
+  ];
+
+  // ---------- State ----------
+  var state = "menu"; // menu | play | landed | crashed | done
+  var level = 0;
+  var score = 0;
+  var best = 0;
+  try { best = parseInt(localStorage.getItem("rl_best") || "0", 10) || 0; } catch (e) {}
+
+  var terrain = [];      // array of {x, y}
+  var pads = [];         // array of {x1, x2}
+  var ship = null;
+  var particles = [];
+  var stars = [];
+  var thrustOn = false;
+  var rotL = false, rotR = false;
+  var lastTime = 0;
+  var shake = 0;
+
+  // ---------- Stars ----------
+  function makeStars() {
+    stars = [];
+    for (var i = 0; i < 90; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H * 0.85,
+        r: Math.random() * 1.4 + 0.3,
+        tw: Math.random() * Math.PI * 2
+      });
+    }
+  }
+  makeStars();
+
+  // ---------- Terrain generation ----------
+  function genLevel(idx) {
+    var cfg = LEVELS[idx];
+    terrain = [];
+    var step = 24;
+    var x = 0;
+    var y = H * (0.62 + Math.random() * 0.1);
+    while (x <= W + step) {
+      terrain.push({ x: x, y: y });
+      var dy = (Math.random() * 2 - 1) * cfg.roughness;
+      // keep within bounds
+      y += dy;
+      if (y < H * 0.45) y = H * 0.45 + Math.random() * 10;
+      if (y > H * 0.92) y = H * 0.92 - Math.random() * 10;
+      x += step;
+    }
+    // carve flat pads
+    pads = [];
+    var attempts = 0;
+    var placed = 0;
+    while (placed < cfg.padCount && attempts < 400) {
+      attempts++;
+      var padW = 90 + Math.random() * 70;
+      var px = 60 + Math.random() * (W - 120 - padW);
+      var ok = true;
+      for (var p = 0; p < pads.length; p++) {
+        if (px < pads[p].x2 + 60 && px + padW > pads[p].x1 - 60) { ok = false; break; }
+      }
+      if (!ok) continue;
+      // flatten terrain under pad
+      var py = H * (0.72 + Math.random() * 0.12);
+      var i0 = Math.floor(px / step);
+      var i1 = Math.ceil((px + padW) / step);
+      for (var i = Math.max(0, i0 - 1); i <= Math.min(terrain.length - 1, i1 + 1); i++) {
+        terrain[i].y = py;
+      }
+      pads.push({ x1: px, x2: px + padW, y: py });
+      placed++;
+    }
+    // ensure at least one pad
+    if (pads.length === 0) {
+      var pw = 120, pxx = W / 2 - pw / 2, ppy = H * 0.8;
+      var a = Math.floor(pxx / step), b = Math.ceil((pxx + pw) / step);
+      for (var j = Math.max(0, a - 1); j <= Math.min(terrain.length - 1, b + 1); j++) terrain[j].y = ppy;
+      pads.push({ x1: pxx, x2: pxx + pw, y: ppy });
+    }
+  }
+
+  function groundYAt(x) {
+    if (x <= terrain[0].x) return terrain[0].y;
+    for (var i = 0; i < terrain.length - 1; i++) {
+      if (x >= terrain[i].x && x <= terrain[i + 1].x) {
+        var t = (x - terrain[i].x) / (terrain[i + 1].x - terrain[i].x);
+        return terrain[i].y + (terrain[i + 1].y - terrain[i].y) * t;
+      }
+    }
+    return terrain[terrain.length - 1].y;
+  }
+
+  function onPad(x) {
+    for (var i = 0; i < pads.length; i++) {
+      if (x >= pads[i].x1 && x <= pads[i].x2) return pads[i];
+    }
+    return null;
+  }
+
+  // ---------- Ship ----------
+  function resetShip() {
+    ship = {
+      x: W * (0.25 + Math.random() * 0.5),
+      y: 60 + Math.random() * 40,
+      vx: (Math.random() * 2 - 1) * (1.2 + level * 0.3),
+      vy: 0.5,
+      angle: 0,
+      va: 0,
+      fuel: LEVELS[level].fuel,
+      w: 18, h: 26
+    };
+    particles = [];
+    shake = 0;
+  }
+
+  // ---------- Particles ----------
+  function spawnThrust() {
+    var cfg = LEVELS[level];
+    var back = ship.angle + Math.PI / 2;
+    for (var i = 0; i < 3; i++) {
+      particles.push({
+        x: ship.x + Math.cos(back) * 14 + (Math.random() - 0.5) * 6,
+        y: ship.y + Math.sin(back) * 14 + (Math.random() - 0.5) * 6,
+        vx: Math.cos(back) * (2 + Math.random() * 2) + ship.vx * 0.3,
+        vy: Math.sin(back) * (2 + Math.random() * 2) + ship.vy * 0.3,
+        life: 0.5 + Math.random() * 0.3,
+        maxLife: 0.8,
+        r: 2 + Math.random() * 2,
+        color: Math.random() < 0.5 ? "#facc15" : "#fb923c"
+      });
+    }
+  }
+
+  function spawnCrash() {
+    for (var i = 0; i < 40; i++) {
+      var a = Math.random() * Math.PI * 2;
+      var sp = 1 + Math.random() * 5;
+      particles.push({
+        x: ship.x, y: ship.y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1,
+        life: 0.8 + Math.random() * 0.8,
+        maxLife: 1.6,
+        r: 2 + Math.random() * 3,
+        color: ["#f87171", "#fb923c", "#facc15", "#94a3b8"][i % 4]
+      });
+    }
+    shake = 14;
+  }
+
+  function spawnLanding() {
+    for (var i = 0; i < 24; i++) {
+      var a = Math.random() * Math.PI * 2;
+      var sp = 0.5 + Math.random() * 2;
+      particles.push({
+        x: ship.x, y: ship.y + 10,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5,
+        life: 0.6 + Math.random() * 0.6,
+        maxLife: 1.2,
+        r: 1.5 + Math.random() * 2,
+        color: ["#4ade80", "#5eead4", "#a7f3d0"][i % 3]
+      });
+    }
+  }
+
+  // ---------- Physics ----------
+  function physics(dt) {
+    var cfg = LEVELS[level];
+    // rotation
+    var rotAccel = 0.011;
+    if (rotL) ship.va -= rotAccel;
+    if (rotR) ship.va += rotAccel;
+    ship.va *= 0.985;
+    ship.angle += ship.va;
+
+    // thrust
+    thrustOn = (keys.up || keys.space || touchThrust) && ship.fuel > 0;
+    if (thrustOn) {
+      var tx = Math.cos(ship.angle - Math.PI / 2);
+      var ty = Math.sin(ship.angle - Math.PI / 2);
+      var power = 34;
+      ship.vx += tx * power * dt;
+      ship.vy += ty * power * dt;
+      ship.fuel = Math.max(0, ship.fuel - 14 * dt);
+      spawnThrust();
+    }
+
+    // gravity
+    ship.vy += cfg.gravity * dt;
+
+    // integrate
+    ship.x += ship.vx;
+    ship.y += ship.vy;
+
+    // walls
+    if (ship.x < 14) { ship.x = 14; ship.vx = Math.abs(ship.vx) * 0.4; }
+    if (ship.x > W - 14) { ship.x = W - 14; ship.vx = -Math.abs(ship.vx) * 0.4; }
+    if (ship.y < 14) { ship.y = 14; ship.vy = Math.abs(ship.vy) * 0.4; }
+
+    // ground collision
+    var gy = groundYAt(ship.x);
+    if (ship.y + 14 >= gy) {
+      var speed = Math.hypot(ship.vx, ship.vy);
+      var pad = onPad(ship.x);
+      var slope = 0;
+      var i = Math.floor(ship.x / 24);
+      if (i > 0 && i < terrain.length - 1) {
+        slope = Math.abs(terrain[i + 1].y - terrain[i - 1].y) / 48;
+      }
+      var soft = pad && speed < cfg.maxVel && Math.abs(ship.va) < cfg.maxRot && Math.abs(ship.angle) < 0.35 && slope < cfg.maxSlope;
+      if (soft) {
+        land();
+      } else {
+        crash();
+      }
+    }
+  }
+
+  function land() {
+    state = "landed";
+    var fuelBonus = Math.round(ship.fuel * 10);
+    var levelBonus = (level + 1) * 100;
+    var total = fuelBonus + levelBonus;
+    score += total;
+    spawnLanding();
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem("rl_best", String(best)); } catch (e) {}
+    }
+    if (level >= LEVELS.length - 1) {
+      showCard("MISSION COMPLETE", "win",
+        "All 5 levels landed. You are a certified lunar pilot.",
+        "Score <b>" + score + "</b> · Best <b>" + best + "</b>",
+        "PLAY AGAIN", startGame);
+    } else {
+      showCard("PAD SECURED", "win",
+        "Lander down. Fuel bonus +" + fuelBonus + " · Level bonus +" + levelBonus + ".",
+        "Score <b>" + score + "</b> · Best <b>" + best + "</b>",
+        "NEXT LEVEL", nextLevel);
+    }
+  }
+
+  function crash() {
+    state = "crashed";
+    spawnCrash();
+    showCard("LOST IN SPACE", "lose",
+      "The lander broke up on impact. Check speed, rotation and slope before touching down.",
+      "Score <b>" + score + "</b> · Best <b>" + best + "</b>",
+      "RETRY LEVEL", retryLevel);
+  }
+
+  // ---------- Flow ----------
+  function showCard(title, cls, msg, stat, btnLabel, fn) {
+    cTitle.textContent = title;
+    cTitle.className = cls;
+    cMsg.innerHTML = msg;
+    cStat.innerHTML = stat;
+    cBtn.textContent = btnLabel;
+    cBtn.onclick = fn;
+    overlay.classList.remove("hidden");
+  }
+
+  function hideCard() { overlay.classList.add("hidden"); }
+
+  function startGame() {
+    level = 0;
+    score = 0;
+    beginLevel();
+  }
+
+  function nextLevel() {
+    level = Math.min(LEVELS.length - 1, level + 1);
+    beginLevel();
+  }
+
+  function retryLevel() {
+    beginLevel();
+  }
+
+  function beginLevel() {
+    genLevel(level);
+    resetShip();
+    state = "play";
+    hideCard();
+    lastTime = performance.now();
+  }
+
+  // ---------- Input ----------
+  var keys = { up: false, space: false };
+  var touchThrust = false;
+
+  window.addEventListener("keydown", function (e) {
+    if (e.code === "ArrowLeft" || e.code === "KeyA") { rotL = true; e.preventDefault(); }
+    if (e.code === "ArrowRight" || e.code === "KeyD") { rotR = true; e.preventDefault(); }
+    if (e.code === "ArrowUp" || e.code === "KeyW") { keys.up = true; e.preventDefault(); }
+    if (e.code === "Space") { keys.space = true; e.preventDefault(); }
+    if (e.code === "KeyR" && (state === "play" || state === "crashed")) { retryLevel(); }
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.code === "ArrowLeft" || e.code === "KeyA") rotL = false;
+    if (e.code === "ArrowRight" || e.code === "KeyD") rotR = false;
+    if (e.code === "ArrowUp" || e.code === "KeyW") keys.up = false;
+    if (e.code === "Space") keys.space = false;
+  });
+
+  function bindTouch(el, down, up) {
+    el.addEventListener("touchstart", function (e) { e.preventDefault(); down(); }, { passive: false });
+    el.addEventListener("touchend", function (e) { e.preventDefault(); up(); }, { passive: false });
+    el.addEventListener("mousedown", function (e) { e.preventDefault(); down(); });
+    el.addEventListener("mouseup", function (e) { e.preventDefault(); up(); });
+    el.addEventListener("mouseleave", function () { up(); });
+  }
+  bindTouch(document.getElementById("tLeft"), function () { rotL = true; }, function () { rotL = false; });
+  bindTouch(document.getElementById("tRight"), function () { rotR = true; }, function () { rotR = false; });
+  bindTouch(document.getElementById("tThrust"), function () { touchThrust = true; }, function () { touchThrust = false; });
+
+  // ---------- Render ----------
+  function drawStars(t) {
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var a = 0.4 + 0.6 * Math.abs(Math.sin(t * 0.001 + s.tw));
+      ctx.globalAlpha = a;
+      ctx.fillStyle = "#cdd6f4";
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawTerrain() {
+    // fill
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    for (var i = 0; i < terrain.length; i++) ctx.lineTo(terrain[i].x, terrain[i].y);
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    var g = ctx.createLinearGradient(0, H * 0.5, 0, H);
+    g.addColorStop(0, "#1e2436");
+    g.addColorStop(1, "#0d1120");
+    ctx.fillStyle = g;
+    ctx.fill();
+    // top line
+    ctx.beginPath();
+    ctx.moveTo(terrain[0].x, terrain[0].y);
+    for (var j = 1; j < terrain.length; j++) ctx.lineTo(terrain[j].x, terrain[j].y);
+    ctx.strokeStyle = "#3b4668";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function drawPads() {
+    for (var i = 0; i < pads.length; i++) {
+      var p = pads[i];
+      ctx.fillStyle = "#5eead4";
+      ctx.fillRect(p.x1, p.y - 3, p.x2 - p.x1, 4);
+      // glow
+      ctx.globalAlpha = 0.25;
+      ctx.fillStyle = "#5eead4";
+      ctx.fillRect(p.x1, p.y - 10, p.x2 - p.x1, 8);
+      ctx.globalAlpha = 1;
+      // posts
+      ctx.fillStyle = "#2dd4bf";
+      ctx.fillRect(p.x1 - 2, p.y - 12, 3, 12);
+      ctx.fillRect(p.x2 - 1, p.y - 12, 3, 12);
+    }
+  }
+
+  function drawShip() {
+    if (state === "crashed") return;
+    ctx.save();
+    ctx.translate(ship.x, ship.y);
+    ctx.rotate(ship.angle);
+    // body
+    ctx.fillStyle = "#e2e8f0";
+    ctx.beginPath();
+    ctx.moveTo(0, -16);
+    ctx.lineTo(9, 8);
+    ctx.lineTo(5, 13);
+    ctx.lineTo(-5, 13);
+    ctx.lineTo(-9, 8);
+    ctx.closePath();
+    ctx.fill();
+    // window
+    ctx.fillStyle = "#38bdf8";
+    ctx.beginPath();
+    ctx.arc(0, -4, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    // legs
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-9, 8); ctx.lineTo(-13, 15);
+    ctx.moveTo(9, 8); ctx.lineTo(13, 15);
+    ctx.stroke();
+    // nozzle
+    ctx.fillStyle = "#64748b";
+    ctx.fillRect(-4, 13, 8, 4);
+    // flame
+    if (thrustOn && state === "play") {
+      var fl = 8 + Math.random() * 8;
+      ctx.fillStyle = "#fb923c";
+      ctx.beginPath();
+      ctx.moveTo(-4, 17);
+      ctx.lineTo(0, 17 + fl);
+      ctx.lineTo(4, 17);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.moveTo(-2, 17);
+      ctx.lineTo(0, 17 + fl * 0.6);
+      ctx.lineTo(2, 17);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawParticles() {
+    for (var i = 0; i < particles.length; i++) {
+      var p = particles[i];
+      var a = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFuelBar() {
+    var cfg = LEVELS[level];
+    var w = 120, h = 8;
+    var x = 16, y = H - 22;
+    ctx.fillStyle = "#1b2233";
+    ctx.fillRect(x, y, w, h);
+    var frac = ship ? ship.fuel / cfg.fuel : 1;
+    ctx.fillStyle = frac > 0.35 ? "#facc15" : "#f87171";
+    ctx.fillRect(x, y, w * frac, h);
+    ctx.strokeStyle = "#2a3350";
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = "#8b96b3";
+    ctx.font = "10px monospace";
+    ctx.fillText("FUEL", x, y - 4);
+  }
+
+  function drawSpeedLimit() {
+    var cfg = LEVELS[level];
+    ctx.fillStyle = "#8b96b3";
+    ctx.font = "10px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText("MAX TOUCHDOWN " + cfg.maxVel.toFixed(1), W - 16, H - 14);
+    ctx.textAlign = "left";
+  }
+
+  function render(t) {
+    ctx.save();
+    if (shake > 0) {
+      ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+      shake *= 0.9;
+      if (shake < 0.3) shake = 0;
+    }
+    // bg
+    ctx.fillStyle = "#070a10";
+    ctx.fillRect(-20, -20, W + 40, H + 40);
+    drawStars(t);
+    drawTerrain();
+    drawPads();
+    drawParticles();
+    drawShip();
+    if (state === "play") {
+      drawFuelBar();
+      drawSpeedLimit();
+    }
+    ctx.restore();
+  }
+
+  // ---------- Loop ----------
+  function update(dt) {
+    if (state === "play") {
+      physics(dt);
+    }
+    for (var i = particles.length - 1; i >= 0; i--) {
+      var p = particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.15;
+      p.life -= dt;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+    // HUD
+    if (ship) {
+      hFuel.textContent = Math.round(ship.fuel);
+      hVel.textContent = Math.hypot(ship.vx, ship.vy).toFixed(1);
+    }
+    hLvl.textContent = level + 1;
+    hScore.textContent = score;
+    hBest.textContent = best;
+  }
+
+  function frame(t) {
+    var dt = Math.min(0.05, (t - lastTime) / 1000);
+    lastTime = t;
+    update(dt);
+    render(t);
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- Init ----------
+  genLevel(0);
+  resetShip();
+  state = "menu";
+  showCard("ROCKET LANDER", "",
+    "Guide the lander onto a flat glowing pad.<br>Soft landing: low speed, near-vertical, gentle rotation.<br>5 levels — less fuel, trickier terrain each time.",
+    "Best <b>" + best + "</b>",
+    "LAUNCH", startGame);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
