@@ -198,7 +198,7 @@
 
 <div id="controls">
   <div id="keys">
-    <kbd>←</kbd> <kbd>→</kbd> rotate &nbsp; <kbd>↑</kbd> / <kbd>Space</kbd> thrust &nbsp; <kbd>R</kbd> retry level
+    <kbd>←</kbd> <kbd>→</kbd> rotate &nbsp; <kbd>↑</kbd> / <kbd>Space</kbd> thrust &nbsp; <kbd>R</kbd> retry &nbsp; <kbd>P</kbd> pause
   </div>
   <div id="touch">
     <div class="tbtn" id="tLeft">⟲</div>
@@ -258,6 +258,7 @@
   var rotL = false, rotR = false;
   var lastTime = 0;
   var shake = 0;
+  var paused = false;
 
   // ---------- Stars ----------
   function makeStars() {
@@ -354,6 +355,32 @@
     particles = [];
     shake = 0;
   }
+
+  // ---------- Sound (WebAudio, no files) ----------
+  var actx = null;
+  function audio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
+    }
+    if (actx && actx.state === "suspended") actx.resume();
+    return actx;
+  }
+  function beep(freq, dur, type, vol, delay) {
+    var a = audio();
+    if (!a) return;
+    var t0 = a.currentTime + (delay || 0);
+    var o = a.createOscillator();
+    var g = a.createGain();
+    o.type = type || "square";
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(vol || 0.05, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function sfxLand() { beep(523, 0.12, "square", 0.06); beep(659, 0.12, "square", 0.06, 0.1); beep(784, 0.22, "square", 0.06, 0.2); }
+  function sfxCrash() { beep(160, 0.3, "sawtooth", 0.08); beep(90, 0.4, "sawtooth", 0.08, 0.08); }
+  function sfxClick() { beep(880, 0.05, "square", 0.04); }
 
   // ---------- Particles ----------
   function spawnThrust() {
@@ -464,19 +491,23 @@
     var total = fuelBonus + levelBonus;
     score += total;
     spawnLanding();
+    sfxLand();
+    var newBest = false;
     if (score > best) {
       best = score;
+      newBest = true;
       try { localStorage.setItem("rl_best", String(best)); } catch (e) {}
     }
+    var stat = "Score <b>" + score + "</b> \u00b7 Best <b>" + best + "</b>" + (newBest ? ' \u00b7 <span style="color:var(--accent2)">\u2605 NEW BEST</span>' : "");
     if (level >= LEVELS.length - 1) {
       showCard("MISSION COMPLETE", "win",
         "All 5 levels landed. You are a certified lunar pilot.",
-        "Score <b>" + score + "</b> · Best <b>" + best + "</b>",
+        stat,
         "PLAY AGAIN", startGame);
     } else {
       showCard("PAD SECURED", "win",
         "Lander down. Fuel bonus +" + fuelBonus + " · Level bonus +" + levelBonus + ".",
-        "Score <b>" + score + "</b> · Best <b>" + best + "</b>",
+        stat,
         "NEXT LEVEL", nextLevel);
     }
   }
@@ -484,9 +515,17 @@
   function crash() {
     state = "crashed";
     spawnCrash();
+    sfxCrash();
+    var newBest = false;
+    if (score > best) {
+      best = score;
+      newBest = true;
+      try { localStorage.setItem("rl_best", String(best)); } catch (e) {}
+    }
+    var stat = "Score <b>" + score + "</b> · Best <b>" + best + "</b>" + (newBest ? ' · <span style="color:var(--accent2)">★ NEW BEST</span>' : "");
     showCard("LOST IN SPACE", "lose",
       "The lander broke up on impact. Check speed, rotation and slope before touching down.",
-      "Score <b>" + score + "</b> · Best <b>" + best + "</b>",
+      stat,
       "RETRY LEVEL", retryLevel);
   }
 
@@ -497,7 +536,7 @@
     cMsg.innerHTML = msg;
     cStat.innerHTML = stat;
     cBtn.textContent = btnLabel;
-    cBtn.onclick = fn;
+    cBtn.onclick = function () { sfxClick(); fn(); };
     overlay.classList.remove("hidden");
   }
 
@@ -522,9 +561,33 @@
     genLevel(level);
     resetShip();
     state = "play";
+    paused = false;
     hideCard();
     lastTime = performance.now();
   }
+
+  // ---------- Pause on tab hidden ----------
+  function pauseGame() {
+    if (state !== "play" || paused) return;
+    paused = true;
+    showCard("PAUSED", "",
+      "Tab was hidden \u2014 the lander is on hold.",
+      "Score <b>" + score + "</b> \u00b7 Best <b>" + best + "</b>",
+      "RESUME", resumeGame);
+  }
+  function resumeGame() {
+    paused = false;
+    hideCard();
+    lastTime = performance.now();
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) pauseGame();
+  });
+  window.addEventListener("keydown", function (e) {
+    if ((e.code === "KeyP" || e.code === "Escape") && state === "play") {
+      if (paused) resumeGame(); else pauseGame();
+    }
+  });
 
   // ---------- Input ----------
   var keys = { up: false, space: false };
